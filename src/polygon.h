@@ -95,18 +95,19 @@ bool ring_is_simple(const Ring& ring);
  * @return true if rings intersect, false otherwise
 */
 bool rings_intersect(const Ring& a, const Ring& b);
+
 /**
- * @brief Validates polygon topology.
- *
- * Checks:
- * - Each ring is simple (no self-intersections)
- * - No rings intersect each other
- *
- * fyi Does NOT yet check containment (holes inside exterior ring) TBU
- *
- * @param poly Input polygon
- * @return true if topology is valid, false otherwise
-*/
+ * @brief Returns true if point p lies inside or on the boundary of ring.
+ */
+bool point_in_ring(const Point& p, const Ring& ring);
+
+/**
+ * @brief Validates polygon topology:
+ * - each ring is simple
+ * - no ring intersections
+ * - all holes are inside exterior ring
+ * - holes do not contain each other
+ */
 bool polygon_topology_valid(const Polygon& poly);
 
 /**

@@ -83,11 +83,24 @@ double polygon_signed_area(const std::vector<Point>& pts);
 */
 double triangle_signed_area2(const Point& a, const Point& b, const Point& c);
 
-// returns a point E such that:
-// cross(A,E) + cross(E,D) = cross(A,B)+cross(B,C)+cross(C,D)
-// preserves the local shoelace contribution of A-B-C-D when replaced by A-E-D.
-// baseline construction for now
-Point area_preserving_point_baseline(const Point& A, const Point& B, const Point& C, const Point& D);
+struct ApscPlacement {
+    Point E;
+    double displacement;
+    bool valid;
+};
+
+ApscPlacement apsc_placement_and_displacement(
+    const Point& A,
+    const Point& B,
+    const Point& C,
+    const Point& D
+);
+
+Point area_preserving_point_apsc(
+    const Point& A,
+    const Point& B,
+    const Point& C,
+    const Point& D);
 
 // baseline local displacement proxy
 double local_displacement_proxy(const Point& A, const Point& B, const Point& C, const Point& D, const Point& E);

@@ -1,4 +1,5 @@
 #include "geometry.h"
+#include <limits>
 
 double cross(const Point& a, const Point& b) {
     return a.x * b.y - a.y * b.x;
@@ -72,46 +73,170 @@ double triangle_signed_area2(const Point& a, const Point& b, const Point& c) {
     return cross(a, b) + cross(b, c) + cross(c, a);
 }
 
-Point area_preserving_point_baseline(const Point& A, const Point& B, const Point& C, const Point& D) {
-    // Preserve local shoelace contribution:
-    // cross(A,E) + cross(E,D) = S
-    // where S = cross(A,B)+cross(B,C)+cross(C,D)
-    //
-    // Let E = M + t*n, where M is midpoint of AD and n is a unit normal to AD.
-    // Then solve for t.
-    //
-    // This gives one valid area-preserving point; it is a baseline scaffold.
-    const double S = cross(A, B) + cross(B, C) + cross(C, D);
-
-    const Point M{(A.x + D.x) * 0.5, (A.y + D.y) * 0.5};
-    const Point v{D.x - A.x, D.y - A.y};
-    const double len = std::sqrt(v.x * v.x + v.y * v.y);
-
-    if (len < EPS) {
-        return M;
+static bool line_intersection_general(
+    double a1, double b1, double c1,
+    double a2, double b2, double c2,
+    Point& out)
+{
+    const double det = a1 * b2 - a2 * b1;
+    if (std::fabs(det) < EPS) {
+        return false;
     }
 
-    const Point n{-v.y / len, v.x / len};
+    out.x = (b1 * c2 - b2 * c1) / det;
+    out.y = (a2 * c1 - a1 * c2) / det;
+    return true;
+}
 
-    // S(E) = cross(A,E) + cross(E,D)
-    // For E = M + t n:
-    // S(E) = S(M) + t * (cross(A,n) + cross(n,D))
-    const double SM = cross(A, M) + cross(M, D);
-    const double coeff = cross(A, n) + cross(n, D);
+static bool line_through_points(const Point& P, const Point& Q, double& a, double& b, double& c) {
+    a = Q.y - P.y;
+    b = P.x - Q.x;
+    c = -(a * P.x + b * P.y);
+    return !(std::fabs(a) < EPS && std::fabs(b) < EPS);
+}
 
-    if (std::fabs(coeff) < EPS) {
-        return M;
+ApscPlacement apsc_placement_and_displacement(
+    const Point& A,
+    const Point& B,
+    const Point& C,
+    const Point& D)
+{
+    // a*xE + b*yE + c = 0
+    const double a = D.y - A.y;
+    const double b = A.x - D.x;
+    const double c =
+        -B.y * A.x +
+        (A.y - C.y) * B.x +
+        (B.y - D.y) * C.x +
+        C.y * D.x;
+
+    auto side_of_directed_line = [](const Point& P, const Point& U, const Point& V) -> int {
+        const double s = cross(U, V, P);
+        if (s > EPS) return 1;
+        if (s < -EPS) return -1;
+        return 0;
+    };
+
+    auto dist_num_to_line = [](const Point& P, const Point& U, const Point& V) -> double {
+        // numerator of perpendicular distance; denominator is constant for both B and C
+        return std::fabs(cross(U, V, P));
+    };
+
+    // Singular case from paper Fig. 6(b): B,C,D collinear => optimal E = B, displacement 0
+    if (std::fabs(cross(B, C, D)) < EPS) {
+        return {B, 0.0, true};
     }
 
-    const double t = (S - SM) / coeff;
-    return Point{M.x + t * n.x, M.y + t * n.y};
+    // Build candidate intersections
+    Point Eab{};
+    bool haveEab = false;
+    {
+        double a2, b2, c2;
+        if (line_through_points(A, B, a2, b2, c2)) {
+            haveEab = line_intersection_general(a, b, c, a2, b2, c2, Eab);
+        }
+    }
+
+    Point Ecd{};
+    bool haveEcd = false;
+    {
+        double a2, b2, c2;
+        if (line_through_points(C, D, a2, b2, c2)) {
+            haveEcd = line_intersection_general(a, b, c, a2, b2, c2, Ecd);
+        }
+    }
+
+    // Pick any point on Ē to determine which side of AD it lies on
+    Point ElinePoint{};
+    bool haveElinePoint = false;
+    if (std::fabs(b) > EPS) {
+        ElinePoint = Point{0.0, -c / b};
+        haveElinePoint = true;
+    } else if (std::fabs(a) > EPS) {
+        ElinePoint = Point{-c / a, 0.0};
+        haveElinePoint = true;
+    }
+
+    const int sideB = side_of_directed_line(B, A, D);
+    const int sideC = side_of_directed_line(C, A, D);
+    const int sideEline = haveElinePoint ? side_of_directed_line(ElinePoint, A, D) : 0;
+
+    Point chosenE{};
+    bool chosen = false;
+
+    // Singular case from paper Fig. 6(a): Ē coincident with AD
+    if (sideEline == 0) {
+        // any point on AD is optimal; choose A
+        return {A, 0.0, true};
+    }
+
+    // Paper placement pseudocode, page 12
+    if (sideB == sideC) {
+        if (dist_num_to_line(B, A, D) > dist_num_to_line(C, A, D)) {
+            if (haveEab) {
+                chosenE = Eab;
+                chosen = true;
+            }
+        } else {
+            if (haveEcd) {
+                chosenE = Ecd;
+                chosen = true;
+            }
+        }
+    } else {
+        if (sideB == sideEline) {
+            if (haveEab) {
+                chosenE = Eab;
+                chosen = true;
+            }
+        } else {
+            if (haveEcd) {
+                chosenE = Ecd;
+                chosen = true;
+            }
+        }
+    }
+
+    // Robust fallback if the preferred line intersection was unavailable
+    if (!chosen) {
+        if (haveEab) {
+            chosenE = Eab;
+            chosen = true;
+        } else if (haveEcd) {
+            chosenE = Ecd;
+            chosen = true;
+        } else {
+            return {A, 0.0, false};
+        }
+    }
+
+    // Compute displacement for the chosen case
+    double disp = 0.0;
+    if (chosen && haveEab && point_equal(chosenE, Eab)) {
+        // displaced region: E-B-C-D
+        disp =
+            0.5 * std::fabs(triangle_signed_area2(Eab, B, C)) +
+            0.5 * std::fabs(triangle_signed_area2(Eab, C, D));
+    } else {
+        // displaced region: A-B-C-E
+        disp =
+            0.5 * std::fabs(triangle_signed_area2(A, B, C)) +
+            0.5 * std::fabs(triangle_signed_area2(A, C, chosenE));
+    }
+
+    return {chosenE, disp, true};
+}
+
+Point area_preserving_point_apsc(
+    const Point& A,
+    const Point& B,
+    const Point& C,
+    const Point& D)
+{
+    return apsc_placement_and_displacement(A, B, C, D).E;
 }
 
 double local_displacement_proxy(const Point& A, const Point& B, const Point& C, const Point& D, const Point& E) {
-    // Cheap baseline proxy:
-    // sum absolute triangle areas between old chain and new chain.
-    const double left = std::fabs(0.5 * triangle_signed_area2(A, B, E));
-    const double mid  = std::fabs(0.5 * triangle_signed_area2(B, C, E));
-    const double right= std::fabs(0.5 * triangle_signed_area2(C, D, E));
-    return left + mid + right;
+    const std::vector<Point> poly{A, B, C, D, E};
+    return std::fabs(polygon_signed_area(poly));
 }

@@ -25,7 +25,7 @@ static Ring collapsed_ring(const Ring& ring, int iA, int iB, int iC, int iD, con
 }
 
 static bool candidate_preserves_minimum_ring_size(const Ring& ring) {
-    return static_cast<int>(ring.vertices.size()) >= 4;
+    return static_cast<int>(ring.vertices.size()) >= 5;
 }
 
 static bool candidate_topology_valid(const Polygon& poly, int ring_index, const Ring& new_ring) {
@@ -55,8 +55,11 @@ static std::optional<Candidate> best_candidate_for_polygon(const Polygon& poly) 
             const Point& C = ring.vertices[iC];
             const Point& D = ring.vertices[iD];
 
-            Point E = area_preserving_point_baseline(A, B, C, D);
-            double disp = local_displacement_proxy(A, B, C, D, E);
+            ApscPlacement apsc = apsc_placement_and_displacement(A, B, C, D);
+            if (!apsc.valid) continue;
+
+            Point E = apsc.E;
+            double disp = apsc.displacement;
 
             Ring new_ring = collapsed_ring(ring, iA, iB, iC, iD, E);
 

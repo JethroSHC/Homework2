@@ -123,11 +123,46 @@ bool rings_intersect(const Ring& a, const Ring& b) {
     return false;
 }
 
+bool point_in_ring(const Point& p, const Ring& ring) {
+    const auto& v = ring.vertices;
+    const int n = static_cast<int>(v.size());
+    if (n < 3) return false;
+
+    // Boundary counts as inside
+    for (int i = 0; i < n; ++i) {
+        const Point a = v[i];
+        const Point b = v[(i + 1) % n];
+        if (on_segment(a, b, p)) {
+            return true;
+        }
+    }
+
+    bool inside = false;
+    for (int i = 0, j = n - 1; i < n; j = i++) {
+        const Point& a = v[i];
+        const Point& b = v[j];
+
+        const bool crosses =
+            ((a.y > p.y) != (b.y > p.y)) &&
+            (p.x < (b.x - a.x) * (p.y - a.y) / ((b.y - a.y) + EPS) + a.x);
+
+        if (crosses) {
+            inside = !inside;
+        }
+    }
+
+    return inside;
+}
+
 bool polygon_topology_valid(const Polygon& poly) {
+    if (poly.rings.empty()) return false;
+
+    // 1. Every ring must be simple
     for (const auto& ring : poly.rings) {
         if (!ring_is_simple(ring)) return false;
     }
 
+    // 2. No pair of rings may intersect
     for (size_t i = 0; i < poly.rings.size(); ++i) {
         for (size_t j = i + 1; j < poly.rings.size(); ++j) {
             if (rings_intersect(poly.rings[i], poly.rings[j])) {
@@ -136,8 +171,32 @@ bool polygon_topology_valid(const Polygon& poly) {
         }
     }
 
+    // 3. Every interior ring must lie inside the exterior ring
+    const Ring& exterior = poly.rings[0];
+    for (size_t i = 1; i < poly.rings.size(); ++i) {
+        if (poly.rings[i].vertices.empty()) return false;
+        if (!point_in_ring(poly.rings[i].vertices[0], exterior)) {
+            return false;
+        }
+    }
+
+    // 4. Holes must not contain each other
+    for (size_t i = 1; i < poly.rings.size(); ++i) {
+        for (size_t j = i + 1; j < poly.rings.size(); ++j) {
+            if (poly.rings[j].vertices.empty()) return false;
+
+            if (point_in_ring(poly.rings[j].vertices[0], poly.rings[i])) {
+                return false;
+            }
+            if (point_in_ring(poly.rings[i].vertices[0], poly.rings[j])) {
+                return false;
+            }
+        }
+    }
+
     return true;
 }
+
 
 void normalize_vertex_ids_and_print(const Polygon& output, const Polygon& input, double total_areal_displacement) {
     std::cout << "ring_id,vertex_id,x,y\n";
