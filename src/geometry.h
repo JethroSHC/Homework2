@@ -70,6 +70,13 @@ int orientation(const Point& a, const Point& b, const Point& c);
 bool on_segment(const Point& a, const Point& b, const Point& p);
 bool segments_intersect(const Point& a, const Point& b, const Point& c, const Point& d);
 
+bool segment_intersection_point(
+    const Point& a, const Point& b,
+    const Point& c, const Point& d,
+    Point& out);
+
+double segment_parameter(const Point& a, const Point& b, const Point& p);
+
 /**
  * @brief Computes signed area of a polygon (shoelace formula).
  *

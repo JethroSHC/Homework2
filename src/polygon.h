@@ -101,6 +101,8 @@ bool rings_intersect(const Ring& a, const Ring& b);
  */
 bool point_in_ring(const Point& p, const Ring& ring);
 
+bool point_strictly_in_ring(const Point& p, const Ring& ring);
+
 /**
  * @brief Validates polygon topology:
  * - each ring is simple
@@ -109,6 +111,12 @@ bool point_in_ring(const Point& p, const Ring& ring);
  * - holes do not contain each other
  */
 bool polygon_topology_valid(const Polygon& poly);
+
+bool point_in_polygon_with_holes(const Point& p, const Polygon& poly);
+
+double intersection_area_between(const Polygon& a, const Polygon& b);
+
+double total_areal_displacement_between(const Polygon& input, const Polygon& output);
 
 /**
  * @brief Prints the polygon in CSV format with normalized vertex IDs.

@@ -56,6 +56,56 @@ bool segments_intersect(const Point& a, const Point& b, const Point& c, const Po
     return false;
 }
 
+bool segment_intersection_point(
+    const Point& a, const Point& b,
+    const Point& c, const Point& d,
+    Point& out)
+{
+    // Solve a + t(b-a) = c + u(d-c)
+    const double x1 = a.x, y1 = a.y;
+    const double x2 = b.x, y2 = b.y;
+    const double x3 = c.x, y3 = c.y;
+    const double x4 = d.x, y4 = d.y;
+
+    const double dx1 = x2 - x1;
+    const double dy1 = y2 - y1;
+    const double dx2 = x4 - x3;
+    const double dy2 = y4 - y3;
+
+    const double denom = dx1 * dy2 - dy1 * dx2;
+    if (std::fabs(denom) < EPS) {
+        return false; // parallel / collinear
+    }
+
+    const double rx = x3 - x1;
+    const double ry = y3 - y1;
+
+    const double t = (rx * dy2 - ry * dx2) / denom;
+    const double u = (rx * dy1 - ry * dx1) / denom;
+
+    if (t < -EPS || t > 1.0 + EPS || u < -EPS || u > 1.0 + EPS) {
+        return false;
+    }
+
+    out.x = x1 + t * dx1;
+    out.y = y1 + t * dy1;
+    return true;
+}
+
+double segment_parameter(const Point& a, const Point& b, const Point& p)
+{
+    const double dx = b.x - a.x;
+    const double dy = b.y - a.y;
+
+    if (std::fabs(dx) >= std::fabs(dy)) {
+        if (std::fabs(dx) < EPS) return 0.0;
+        return (p.x - a.x) / dx;
+    } else {
+        if (std::fabs(dy) < EPS) return 0.0;
+        return (p.y - a.y) / dy;
+    }
+}
+
 double polygon_signed_area(const std::vector<Point>& pts) {
     const int n = static_cast<int>(pts.size());
     if (n < 3) return 0.0;
@@ -101,7 +151,7 @@ ApscPlacement apsc_placement_and_displacement(
     const Point& C,
     const Point& D)
 {
-    // a*xE + b*yE + c = 0
+    // area-preserving line a*x + b*y + c = 0
     const double a = D.y - A.y;
     const double b = A.x - D.x;
     const double c =
@@ -118,16 +168,15 @@ ApscPlacement apsc_placement_and_displacement(
     };
 
     auto dist_num_to_line = [](const Point& P, const Point& U, const Point& V) -> double {
-        // numerator of perpendicular distance; denominator is constant for both B and C
+        // proportional to perpendicular distance; denominator is same for B and C
         return std::fabs(cross(U, V, P));
     };
 
-    // Singular case from paper Fig. 6(b): B,C,D collinear => optimal E = B, displacement 0
+    // B, C, D collinear => optimal E = B, displacement 0
     if (std::fabs(cross(B, C, D)) < EPS) {
         return {B, 0.0, true};
     }
 
-    // Build candidate intersections
     Point Eab{};
     bool haveEab = false;
     {
@@ -146,7 +195,7 @@ ApscPlacement apsc_placement_and_displacement(
         }
     }
 
-    // Pick any point on Ē to determine which side of AD it lies on
+    // Pick any point on the area-preserving line to determine its side relative to AD
     Point ElinePoint{};
     bool haveElinePoint = false;
     if (std::fabs(b) > EPS) {
@@ -161,70 +210,59 @@ ApscPlacement apsc_placement_and_displacement(
     const int sideC = side_of_directed_line(C, A, D);
     const int sideEline = haveElinePoint ? side_of_directed_line(ElinePoint, A, D) : 0;
 
-    Point chosenE{};
-    bool chosen = false;
-
-    // Singular case from paper Fig. 6(a): Ē coincident with AD
+    // E-bar coincident with AD => any point on AD is optimal
     if (sideEline == 0) {
-        // any point on AD is optimal; choose A
         return {A, 0.0, true};
     }
 
-    // Paper placement pseudocode, page 12
+    enum class Choice { NONE, AB, CD };
+    Choice choice = Choice::NONE;
+
+    const double dB = dist_num_to_line(B, A, D);
+    const double dC = dist_num_to_line(C, A, D);
+
     if (sideB == sideC) {
-        if (dist_num_to_line(B, A, D) > dist_num_to_line(C, A, D)) {
-            if (haveEab) {
-                chosenE = Eab;
-                chosen = true;
-            }
+        if (dB > dC + EPS) {
+            if (haveEab) choice = Choice::AB;
+        } else if (dC > dB + EPS) {
+            if (haveEcd) choice = Choice::CD;
         } else {
-            if (haveEcd) {
-                chosenE = Ecd;
-                chosen = true;
-            }
+            // equal-dist singular case; any point between intersections is optimal.
+            // Deterministic tie-break:
+            if (haveEab) choice = Choice::AB;
+            else if (haveEcd) choice = Choice::CD;
         }
     } else {
         if (sideB == sideEline) {
-            if (haveEab) {
-                chosenE = Eab;
-                chosen = true;
-            }
+            if (haveEab) choice = Choice::AB;
         } else {
-            if (haveEcd) {
-                chosenE = Ecd;
-                chosen = true;
-            }
+            if (haveEcd) choice = Choice::CD;
         }
     }
 
-    // Robust fallback if the preferred line intersection was unavailable
-    if (!chosen) {
-        if (haveEab) {
-            chosenE = Eab;
-            chosen = true;
-        } else if (haveEcd) {
-            chosenE = Ecd;
-            chosen = true;
-        } else {
-            return {A, 0.0, false};
-        }
+    if (choice == Choice::NONE) {
+        if (haveEab) choice = Choice::AB;
+        else if (haveEcd) choice = Choice::CD;
+        else return {A, 0.0, false};
     }
 
-    // Compute displacement for the chosen case
-    double disp = 0.0;
-    if (chosen && haveEab && point_equal(chosenE, Eab)) {
-        // displaced region: E-B-C-D
-        disp =
-            0.5 * std::fabs(triangle_signed_area2(Eab, B, C)) +
-            0.5 * std::fabs(triangle_signed_area2(Eab, C, D));
+    const Point chosenE = (choice == Choice::AB) ? Eab : Ecd;
+
+    // Displacement depends on which side was chosen.
+    double displacement = 0.0;
+    if (choice == Choice::AB) {
+        // displaced region = E-B-C-D
+        displacement =
+            0.5 * std::fabs(triangle_signed_area2(chosenE, B, C)) +
+            0.5 * std::fabs(triangle_signed_area2(chosenE, C, D));
     } else {
-        // displaced region: A-B-C-E
-        disp =
+        // displaced region = A-B-C-E
+        displacement =
             0.5 * std::fabs(triangle_signed_area2(A, B, C)) +
             0.5 * std::fabs(triangle_signed_area2(A, C, chosenE));
     }
 
-    return {chosenE, disp, true};
+    return {chosenE, displacement, true};
 }
 
 Point area_preserving_point_apsc(
