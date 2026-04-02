@@ -20,6 +20,10 @@ struct Candidate {
     int iD{-1};
     Point E{};
     double displacement{0.0};
+
+    // stale/valid flags for lazy priority-queue invalidation
+    bool valid{true};
+    std::size_t generation{0};
 };
 
 /**
@@ -31,12 +35,12 @@ struct Candidate {
  * 3. Applies the collapse
  *
  * Stops when:
- * - Total vertices less than eq target_vertices
+ * - total vertices <= target_vertices
  * - or no valid collapse exists
  *
  * @param input Original polygon
- * @param target_vertices Desired maximum vtx count
- * @param total_areal_displacement Output accumulated displacement
+ * @param target_vertices Desired maximum vertex count
+ * @param total_areal_displacement Accumulated local areal displacement
  * @return Simplified polygon
-*/
+ */
 Polygon simplify_polygon(const Polygon& input, int target_vertices, double& total_areal_displacement);
